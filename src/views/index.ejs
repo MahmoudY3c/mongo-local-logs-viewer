@@ -117,7 +117,10 @@
 
         selectedDb.profiler = res.result;
         updateStatus();
-        await loadLogs(true);
+
+        if (action === "enable") {
+          await loadLogs(true);
+        }
       });
 
       dbSelect.addEventListener("change", async () => {
@@ -125,7 +128,10 @@
         skip = 0;
         container.innerHTML = "";
         updateStatus();
-        await loadLogs(true);
+
+        if (selectedDb.profiler.was === 2) {
+          await loadLogs(true);
+        }
       });
 
       async function loadLogs(reset = false) {
