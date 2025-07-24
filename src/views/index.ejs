@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>MongoDB Operation Logs</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      #log-container {
+        max-height: 80vh;
+        overflow-y: auto;
+      }
+    </style>
+  </head>
+  <body class="bg-gray-100 text-gray-800 font-sans">
+    <div class="max-w-5xl mx-auto p-6">
+      <h1 class="text-2xl font-bold mb-6 text-center">
+        MongoDB Operation Logs
+      </h1>
+
+      <div class="flex flex-col sm:flex-row items-center gap-4 mb-6">
+        <label for="db-select" class="text-lg font-medium">Database:</label>
+        <select
+          id="db-select"
+          class="p-2 border border-gray-300 rounded shadow-sm"
+        >
+          <!-- populated by JS -->
+        </select>
+        <span
+          id="status"
+          class="text-sm font-semibold px-3 py-1 rounded-full bg-gray-300 text-gray-800"
+        >
+          Status: <span id="profiler-status">Loading...</span>
+        </span>
+        <span
+          id="status"
+          class="text-sm font-semibold px-3 py-1 rounded-full bg-gray-300 text-gray-800"
+        >
+          sizeOnDisk: <span id="sizeOnDisk">Loading...</span>
+        </span>
+        <button
+          id="toggle-profiler"
+          class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
+        >
+          Toggle Profiler
+        </button>
+      </div>
+
+      <div id="log-container" class="space-y-2 overflow-y-auto">
+        <!-- logs will be injected here -->
+      </div>
+
+      <div id="loading" class="text-center mt-4 hidden text-gray-500">
+        Loading more...
+      </div>
+    </div>
+
+    <script>
+      let skip = 0;
+      let loading = false;
+      let selectedDb = {};
+      let dbs = [];
+      const limit = 20;
+
+      const opColors = {
+        insert: "bg-green-100 text-green-800",
+        update: "bg-blue-100 text-blue-800",
+        remove: "bg-red-100 text-red-800",
+      };
+
+      const dbSelect = document.getElementById("db-select");
+      const profilerStatus = document.getElementById("profiler-status");
+      const sizeOnDisk = document.getElementById("sizeOnDisk");
+      const toggleBtn = document.getElementById("toggle-profiler");
+      const container = document.getElementById("log-container");
+
+      async function loadDatabases() {
+        const res = await fetch("/api/databases");
+        dbs = await res.json();
+
+        dbs.forEach((db) => {
+          const option = document.createElement("option");
+          option.value = db.name;
+          option.textContent = db.name;
+          dbSelect.appendChild(option);
+        });
+
+        selectedDb = dbs.find((e) => e.profiler.was === 2) || dbs[0];
+
+        dbSelect.value = selectedDb.name;
+
+        updateStatus();
+        await loadLogs(true);
+      }
+
+      function updateStatus(selected = selectedDb) {
+        profilerStatus.textContent =
+          selected.profiler.was === 2 ? "ENABLED" : "DISABLED";
+        profilerStatus.className = `text-sm font-semibold px-3 py-1 rounded-full ${
+          selected.profiler.was === 2
+            ? "bg-green-200 text-green-800"
+            : "bg-red-200 text-red-800"
+        }`;
+
+        sizeOnDisk.textContent =
+          (selected.sizeOnDisk / (1024 * 1024)).toFixed(2) + "MB";
+      }
+
+      toggleBtn.addEventListener("click", async () => {
+        const action =
+          profilerStatus.textContent.trim() === "ENABLED"
+            ? "disable"
+            : "enable";
+
+        const res = await fetch(
+          `/api/profiler/?dbName=${selectedDb.name}&action=${action}`
+        ).then((res) => res.json());
+
+        selectedDb.profiler = res.result;
+        updateStatus();
+        await loadLogs(true);
+      });
+
+      dbSelect.addEventListener("change", async () => {
+        selectedDb = dbs.find((e) => e.name == dbSelect.value);
+        skip = 0;
+        container.innerHTML = "";
+        updateStatus();
+        await loadLogs(true);
+      });
+
+      async function loadLogs(reset = false) {
+        if (loading) return;
+        loading = true;
+        document.getElementById("loading").classList.remove("hidden");
+
+        const res = await fetch(`/logs?skip=${skip}&dbName=${selectedDb.name}`);
+        const logs = await res.json();
+
+        logs.forEach((log) => {
+          const div = document.createElement("div");
+          const levelClass = opColors[log.op] || "bg-gray-100 text-gray-800";
+          div.className = `px-4 py-2 rounded ${levelClass} shadow-sm`;
+
+          div.innerHTML = `
+          <div class="text-sm font-semibold">
+            [${new Date(log.ts).toLocaleString()}] 
+            <span class="uppercase">${log.op}</span> 
+            <span class="text-xs text-gray-500 ml-2">on ${log.ns}</span>
+          </div>
+          ${
+            log.command
+              ? `<pre class="text-xs mt-1 text-gray-700">${JSON.stringify(
+                  log.command,
+                  null,
+                  2
+                )}</pre>`
+              : ""
+          }
+        `;
+
+          container.appendChild(div);
+        });
+
+        skip += logs.length;
+        loading = false;
+        document.getElementById("loading").classList.add("hidden");
+      }
+
+      window.addEventListener("scroll", () => {
+        if (
+          window.innerHeight + window.scrollY >=
+          document.body.offsetHeight - 100
+        ) {
+          loadLogs();
+        }
+      });
+
+      loadDatabases();
+    </script>
+  </body>
+</html>
