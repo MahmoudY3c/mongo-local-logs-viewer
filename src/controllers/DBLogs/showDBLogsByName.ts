@@ -28,11 +28,7 @@ export const showDBLogsByName = asyncHandler(async (req, res) => {
   let profile = db.collection("system.profile");
 
   const logs = await profile
-    .find(
-      {
-        op: { $exists: true },
-      } /* { op: { $in: ["insert", "update", "remove"] } } */
-    )
+    .find({ op: { $in: ["insert", "update", "remove"] } })
     .sort({ ts: -1 })
     .skip(skip)
     .limit(limit)
